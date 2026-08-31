@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ArriveTime.com - Live Distance & ETA Tracker</title>
+    <title>4ETA.com - Real-Time Distance & Location Tracker</title>
 
     <!-- Leaflet CSS for OpenStreetMap (No API key needed) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
@@ -14,13 +14,13 @@
     <style>
         :root {
             --bg-dark: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.85);
+            --card-bg: rgba(15, 23, 42, 0.88);
             --accent-green: #10b981;
-            --accent-blue: #3b82f6;
+            --accent-blue: #2563eb;
             --accent-amber: #f59e0b;
             --text-main: #f8fafc;
             --text-sub: #94a3b8;
-            --border-color: rgba(255, 255, 255, 0.1);
+            --border-color: rgba(255, 255, 255, 0.12);
         }
 
         * {
@@ -48,7 +48,7 @@
             width: 100%;
             height: 100%;
             z-index: 1;
-            background: #0f172a;
+            background: #e5e7eb;
         }
 
         /* Top Header Bar */
@@ -75,7 +75,7 @@
             align-items: center;
             gap: 10px;
             font-weight: 800;
-            font-size: 1.1rem;
+            font-size: 1.2rem;
             letter-spacing: -0.5px;
             color: var(--text-main);
         }
@@ -129,9 +129,9 @@
             align-items: center;
             justify-content: center;
             padding: 10px;
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
-            border: 1px solid rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
         }
 
         .stat-label {
@@ -184,7 +184,7 @@
         }
 
         .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(30, 41, 59, 0.9);
             color: var(--text-main);
             border: 1px solid var(--border-color);
         }
@@ -199,7 +199,7 @@
             opacity: 0.9;
         }
 
-        /* Marker Styles */
+        /* Custom Markers */
         .marker-pin {
             width: 36px;
             height: 36px;
@@ -240,7 +240,7 @@
             100% { transform: scale(2.2); opacity: 0; }
         }
 
-        /* Share Modal */
+        /* Modal Overlay */
         .modal {
             display: none;
             position: fixed;
@@ -276,7 +276,7 @@
         }
 
         .link-box {
-            background: rgba(0,0,0,0.3);
+            background: rgba(0,0,0,0.4);
             border: 1px solid var(--border-color);
             padding: 12px;
             border-radius: 12px;
@@ -310,7 +310,7 @@
 </head>
 <body>
 
-    <!-- Notification Banner -->
+    <!-- Toast Notification -->
     <div id="toast" class="toast">
         <i class="fa-solid fa-circle-check"></i> <span id="toast-text">Link copied to clipboard!</span>
     </div>
@@ -319,7 +319,7 @@
     <div class="top-bar">
         <div class="brand">
             <i class="fa-solid fa-location-arrow"></i>
-            <span>ArriveTime</span>
+            <span>4ETA.com</span>
         </div>
         <div class="session-tag" id="session-tag">
             <i class="fa-solid fa-wifi"></i> <span id="session-id-display">Connecting...</span>
@@ -343,7 +343,7 @@
             <div class="stat-box" style="grid-column: span 2;">
                 <div class="stat-label"><i class="fa-solid fa-gauge-high"></i> Tracking Status</div>
                 <div class="stat-value" id="status-val" style="font-size: 0.95rem; color: var(--accent-amber);">
-                    Acquiring GPS...
+                    Acquiring Location...
                 </div>
             </div>
         </div>
@@ -364,9 +364,9 @@
     <!-- Share Link Modal -->
     <div class="modal" id="share-modal">
         <div class="modal-content">
-            <div class="modal-title">Invite Friend</div>
-            <div class="modal-sub">Send this link to the second phone so both of you can track each other in real-time.</div>
-            <div class="link-box" id="share-link-text">https://arrivetime.com/#...</div>
+            <div class="modal-title">Share 4ETA Link</div>
+            <div class="modal-sub">Send this link to the second phone so both of you can see each other closing in on the map.</div>
+            <div class="link-box" id="share-link-text">https://4eta.com/#...</div>
             <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="copyShareLink()">
                 <i class="fa-solid fa-copy"></i> Copy Link
             </button>
@@ -374,11 +374,11 @@
         </div>
     </div>
 
-    <!-- Leaflet.js Mapping Library (Free OpenStreetMap) -->
+    <!-- Leaflet.js Mapping Engine -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
     <script>
-        // --- Core Global Variables ---
+        // Core State
         let map, userMarker, buddyMarker, connectingLine;
         let userPos = null;
         let buddyPos = null;
@@ -387,11 +387,10 @@
         let demoInterval = null;
         let broadcastChannel = null;
 
-        // Default map starting view (Fallback coordinates)
+        // Default map coordinates (Williamsburg area fallback)
         const DEFAULT_LAT = 37.2707;
         const DEFAULT_LNG = -76.7075;
 
-        // Initialize Application
         window.addEventListener('DOMContentLoaded', () => {
             initSession();
             initMap();
@@ -399,58 +398,54 @@
             setupPeerCommunication();
         });
 
-        // Initialize Session ID from URL or generate new one
         function initSession() {
             if (window.location.hash && window.location.hash.length > 5) {
                 sessionId = window.location.hash.replace('#', '');
             } else {
-                sessionId = 'pair-' + Math.random().toString(36).substring(2, 8);
+                sessionId = 'eta-' + Math.random().toString(36).substring(2, 8);
                 window.location.hash = sessionId;
             }
             document.getElementById('session-id-display').innerText = sessionId.toUpperCase();
         }
 
-        // Initialize Leaflet Map with OpenStreetMap dark tiles
         function initMap() {
             map = L.map('map', {
                 zoomControl: false,
                 attributionControl: false
             }).setView([DEFAULT_LAT, DEFAULT_LNG], 14);
 
-            // Free high-contrast dark tile layer from CartoDB / OpenStreetMap
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            // OpenStreetMap Standard Tiles - 100% Free, No Watermark, No API Key Required
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
-                subdomains: 'abcd'
+                attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
 
-            // Connecting dashed polyline between two people
+            // Connecting line between locations
             connectingLine = L.polyline([], {
                 color: '#10b981',
-                weight: 3,
+                weight: 4,
                 dashArray: '8, 8',
-                opacity: 0.8
+                opacity: 0.9
             }).addTo(map);
         }
 
-        // Start HTML5 Native Geolocation API
         function startGPSWatcher() {
             if ('geolocation' in navigator) {
                 navigator.geolocation.watchPosition(
                     (position) => {
-                        const { latitude, longitude, accuracy } = position.coords;
+                        const { latitude, longitude } = position.coords;
                         userPos = { lat: latitude, lng: longitude };
 
                         updateUserMarker(latitude, longitude);
                         document.getElementById('status-val').innerText = 'Live GPS Active';
                         document.getElementById('status-val').style.color = '#10b981';
 
-                        // Broadcast current position to peer
                         broadcastLocation(userPos);
                         recalculateMetrics();
                     },
                     (error) => {
                         console.warn('GPS Error: ' + error.message);
-                        document.getElementById('status-val').innerText = 'GPS Signal Searching...';
+                        document.getElementById('status-val').innerText = 'Acquiring GPS Signal...';
                         document.getElementById('status-val').style.color = '#f59e0b';
                     },
                     {
@@ -459,12 +454,9 @@
                         timeout: 10000
                     }
                 );
-            } else {
-                alert('Geolocation is not supported by your browser.');
             }
         }
 
-        // Create or update Self Marker
         function updateUserMarker(lat, lng) {
             const icon = L.divIcon({
                 className: 'custom-div-icon',
@@ -481,7 +473,6 @@
             }
         }
 
-        // Create or update Buddy Marker
         function updateBuddyMarker(lat, lng) {
             const icon = L.divIcon({
                 className: 'custom-div-icon',
@@ -497,9 +488,8 @@
             }
         }
 
-        // Setup Tab-to-Tab / Same Domain Peer Synchronization
         function setupPeerCommunication() {
-            broadcastChannel = new BroadcastChannel('arrivetime_' + sessionId);
+            broadcastChannel = new BroadcastChannel('4eta_' + sessionId);
             
             broadcastChannel.onmessage = (event) => {
                 if (event.data && event.data.type === 'location') {
@@ -520,23 +510,19 @@
             }
         }
 
-        // Compute Distance using Haversine Formula and calculate ETA
         function recalculateMetrics() {
             if (!userPos || !buddyPos) return;
 
-            // Draw line
             connectingLine.setLatLngs([
                 [userPos.lat, userPos.lng],
                 [buddyPos.lat, buddyPos.lng]
             ]);
 
-            // Calculate exact distance in miles
             const distMiles = calculateHaversineDistance(
                 userPos.lat, userPos.lng,
                 buddyPos.lat, buddyPos.lng
             );
 
-            // Display distance
             if (distMiles < 0.1) {
                 const feet = Math.round(distMiles * 5280);
                 document.getElementById('dist-val').innerHTML = `${feet} <span>ft</span>`;
@@ -544,8 +530,7 @@
                 document.getElementById('dist-val').innerHTML = `${distMiles.toFixed(2)} <span>mi</span>`;
             }
 
-            // Estimate time of arrival (Assuming walking/driving average of 15 mph in movement or 3 mph walking)
-            const speedMph = 12; // Average approach speed
+            const speedMph = 12;
             const etaMinutes = Math.ceil((distMiles / speedMph) * 60);
 
             if (etaMinutes <= 1) {
@@ -554,17 +539,15 @@
                 document.getElementById('eta-val').innerHTML = `${etaMinutes} <span>min</span>`;
             }
 
-            // Check if arrived (closer than 25 feet)
             if (distMiles * 5280 < 25) {
                 triggerArrivalChime();
-                document.getElementById('status-val').innerText = 'Arrived / Contact Met!';
+                document.getElementById('status-val').innerText = 'Arrived / Destination Reached!';
                 document.getElementById('status-val').style.color = '#10b981';
             }
         }
 
-        // Math Haversine Formula
         function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-            const R = 3958.8; // Radius of the Earth in miles
+            const R = 3958.8;
             const dLat = toRad(lat2 - lat1);
             const dLon = toRad(lon2 - lon1);
             const a = 
@@ -579,7 +562,6 @@
             return degrees * (Math.PI / 180);
         }
 
-        // Dynamic Interactive Simulator for Testing Closing Distance
         function toggleDemoMode() {
             const demoBtn = document.getElementById('demo-btn');
             
@@ -595,7 +577,6 @@
             demoBtn.innerHTML = `<i class="fa-solid fa-stop"></i> Stop Demo`;
             demoBtn.className = "btn btn-secondary";
 
-            // Set initial test coordinates (User and Buddy separated by ~0.8 miles)
             const startLat = userPos ? userPos.lat : DEFAULT_LAT;
             const startLng = userPos ? userPos.lng : DEFAULT_LNG;
 
@@ -605,25 +586,21 @@
             updateUserMarker(userPos.lat, userPos.lng);
             updateBuddyMarker(buddyPos.lat, buddyPos.lng);
 
-            // Fit map bounds to show both
             const bounds = L.latLngBounds(
                 [userPos.lat, userPos.lng],
                 [buddyPos.lat, buddyPos.lng]
             );
             map.fitBounds(bounds, { padding: [50, 50] });
 
-            // Animate buddy getting closer to user
             demoInterval = setInterval(() => {
                 if (!isDemoRunning) return;
 
-                // Move buddy 5% closer each step
                 buddyPos.lat -= (buddyPos.lat - userPos.lat) * 0.08;
                 buddyPos.lng -= (buddyPos.lng - userPos.lng) * 0.08;
 
                 updateBuddyMarker(buddyPos.lat, buddyPos.lng);
                 recalculateMetrics();
 
-                // Stop when very close
                 const dist = calculateHaversineDistance(userPos.lat, userPos.lng, buddyPos.lat, buddyPos.lng);
                 if (dist * 5280 < 20) {
                     clearInterval(demoInterval);
@@ -634,7 +611,6 @@
             }, 1000);
         }
 
-        // Center map to fit both users
         function centerMap() {
             if (userPos && buddyPos) {
                 const bounds = L.latLngBounds(
@@ -647,7 +623,6 @@
             }
         }
 
-        // Web Audio API Synth Arrival Chime (Zero external file dependencies)
         function triggerArrivalChime() {
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -655,8 +630,8 @@
                 const gain = ctx.createGain();
                 
                 osc.type = 'sine';
-                osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-                osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
+                osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+                osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
                 
                 gain.gain.setValueAtTime(0.3, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
@@ -666,12 +641,9 @@
                 
                 osc.start();
                 osc.stop(ctx.currentTime + 0.6);
-            } catch (e) {
-                // Audio context restriction handling
-            }
+            } catch (e) {}
         }
 
-        // Modal Controls
         function openShareModal() {
             document.getElementById('share-link-text').innerText = window.location.href;
             document.getElementById('share-modal').style.display = 'flex';
