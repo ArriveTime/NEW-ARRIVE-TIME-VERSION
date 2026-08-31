@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>4ETA.com - Real-Time Distance & Location Tracker</title>
+    <title>4ETA.com - Real-Time Distance & Speed Tracker</title>
 
-    <!-- Leaflet CSS for OpenStreetMap (No API key needed) -->
+    <!-- Leaflet CSS for OpenStreetMap (100% Free, No API Key Required) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
     
     <!-- FontAwesome Icons -->
@@ -14,7 +14,7 @@
     <style>
         :root {
             --bg-dark: #0f172a;
-            --card-bg: rgba(15, 23, 42, 0.88);
+            --card-bg: rgba(15, 23, 42, 0.90);
             --accent-green: #10b981;
             --accent-blue: #2563eb;
             --accent-amber: #f59e0b;
@@ -115,12 +115,12 @@
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border-radius: 20px;
-            padding: 16px;
+            padding: 14px;
             border: 1px solid var(--border-color);
             box-shadow: 0 10px 40px rgba(0,0,0,0.5);
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
         }
 
         .stat-box {
@@ -128,33 +128,53 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 10px;
+            padding: 10px 6px;
             background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.08);
         }
 
         .stat-label {
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: var(--text-sub);
             margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
 
         .stat-value {
-            font-size: 1.5rem;
+            font-size: 1.35rem;
             font-weight: 800;
             color: var(--text-main);
             display: flex;
             align-items: baseline;
-            gap: 4px;
+            gap: 2px;
         }
 
         .stat-value span {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text-sub);
             font-weight: 500;
+        }
+
+        .status-box {
+            grid-column: span 3;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            margin-top: 4px;
+        }
+
+        .status-text {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--accent-amber);
         }
 
         /* Control Action Buttons */
@@ -287,6 +307,13 @@
             color: var(--accent-green);
         }
 
+        .share-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
         /* Banner Notification */
         .toast {
             position: absolute;
@@ -332,25 +359,34 @@
     <!-- HUD Overlay Controls -->
     <div class="hud-container">
         <div class="stats-card">
+            <!-- Distance Box -->
             <div class="stat-box">
                 <div class="stat-label"><i class="fa-solid fa-ruler"></i> Distance</div>
-                <div class="stat-value" id="dist-val">-- <span>miles</span></div>
+                <div class="stat-value" id="dist-val">-- <span>mi</span></div>
             </div>
+
+            <!-- Speed Box (NEW) -->
+            <div class="stat-box">
+                <div class="stat-label"><i class="fa-solid fa-gauge-high"></i> Speed</div>
+                <div class="stat-value" id="speed-val">0 <span>mph</span></div>
+            </div>
+
+            <!-- ETA Box -->
             <div class="stat-box">
                 <div class="stat-label"><i class="fa-solid fa-clock"></i> Est. Arrival</div>
                 <div class="stat-value" id="eta-val">-- <span>min</span></div>
             </div>
-            <div class="stat-box" style="grid-column: span 2;">
-                <div class="stat-label"><i class="fa-solid fa-gauge-high"></i> Tracking Status</div>
-                <div class="stat-value" id="status-val" style="font-size: 0.95rem; color: var(--accent-amber);">
-                    Acquiring Location...
-                </div>
+
+            <!-- Status Row -->
+            <div class="status-box">
+                <span style="font-size:0.75rem; color: var(--text-sub);">STATUS</span>
+                <span class="status-text" id="status-val">Acquiring Location...</span>
             </div>
         </div>
 
         <div class="action-row">
             <button class="btn btn-primary" onclick="openShareModal()">
-                <i class="fa-solid fa-user-plus"></i> Connect Person
+                <i class="fa-solid fa-share-nodes"></i> Connect Person
             </button>
             <button class="btn btn-amber" onclick="toggleDemoMode()" id="demo-btn">
                 <i class="fa-solid fa-play"></i> Test Demo
@@ -364,13 +400,29 @@
     <!-- Share Link Modal -->
     <div class="modal" id="share-modal">
         <div class="modal-content">
-            <div class="modal-title">Share 4ETA Link</div>
-            <div class="modal-sub">Send this link to the second phone so both of you can see each other closing in on the map.</div>
+            <div class="modal-title">Share Arrival Tracker</div>
+            <div class="modal-sub">Send this link to the person you are meeting so you can see each other's live location & speed in real-time.</div>
+            
             <div class="link-box" id="share-link-text">https://4eta.com/#...</div>
-            <button class="btn btn-primary" style="width: 100%; margin-bottom: 8px;" onclick="copyShareLink()">
-                <i class="fa-solid fa-copy"></i> Copy Link
-            </button>
-            <button class="btn btn-secondary" style="width: 100%;" onclick="closeShareModal()">Close</button>
+
+            <div class="share-grid">
+                <!-- Native Phone Share Sheet (Text Messages, WhatsApp, AirDrop, etc.) -->
+                <button class="btn btn-primary" style="width: 100%;" onclick="shareNative()">
+                    <i class="fa-solid fa-paper-plane"></i> Share Link (SMS / Apps)
+                </button>
+                
+                <!-- Direct SMS Text Link -->
+                <button class="btn btn-amber" style="width: 100%;" onclick="shareSMS()">
+                    <i class="fa-solid fa-comment-sms"></i> Send Text / SMS
+                </button>
+
+                <!-- Copy to Clipboard -->
+                <button class="btn btn-secondary" style="width: 100%;" onclick="copyShareLink()">
+                    <i class="fa-solid fa-copy"></i> Copy Link Only
+                </button>
+            </div>
+
+            <button class="btn btn-secondary" style="width: 100%; margin-top: 4px;" onclick="closeShareModal()">Close</button>
         </div>
     </div>
 
@@ -382,12 +434,13 @@
         let map, userMarker, buddyMarker, connectingLine;
         let userPos = null;
         let buddyPos = null;
+        let currentSpeedMph = 0;
         let sessionId = '';
         let isDemoRunning = false;
         let demoInterval = null;
         let broadcastChannel = null;
 
-        // Default map coordinates (Williamsburg area fallback)
+        // Default map coordinates (Fallback)
         const DEFAULT_LAT = 37.2707;
         const DEFAULT_LNG = -76.7075;
 
@@ -414,13 +467,13 @@
                 attributionControl: false
             }).setView([DEFAULT_LAT, DEFAULT_LNG], 14);
 
-            // OpenStreetMap Standard Tiles - 100% Free, No Watermark, No API Key Required
+            // OpenStreetMap Standard Tiles - Free, No API Key Required
             L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
 
-            // Connecting line between locations
+            // Connecting dashed path between locations
             connectingLine = L.polyline([], {
                 color: '#10b981',
                 weight: 4,
@@ -433,14 +486,23 @@
             if ('geolocation' in navigator) {
                 navigator.geolocation.watchPosition(
                     (position) => {
-                        const { latitude, longitude } = position.coords;
+                        const { latitude, longitude, speed } = position.coords;
                         userPos = { lat: latitude, lng: longitude };
+
+                        // Calculate Speed in MPH (speed is in meters/sec from GPS API)
+                        if (speed !== null && speed !== undefined && speed > 0) {
+                            currentSpeedMph = Math.round(speed * 2.23694);
+                        } else {
+                            currentSpeedMph = 0;
+                        }
+
+                        document.getElementById('speed-val').innerHTML = `${currentSpeedMph} <span>mph</span>`;
 
                         updateUserMarker(latitude, longitude);
                         document.getElementById('status-val').innerText = 'Live GPS Active';
                         document.getElementById('status-val').style.color = '#10b981';
 
-                        broadcastLocation(userPos);
+                        broadcastLocation({ ...userPos, speedMph: currentSpeedMph });
                         recalculateMetrics();
                     },
                     (error) => {
@@ -450,7 +512,7 @@
                     },
                     {
                         enableHighAccuracy: true,
-                        maximumAge: 2000,
+                        maximumAge: 1000,
                         timeout: 10000
                     }
                 );
@@ -504,8 +566,7 @@
             if (broadcastChannel && pos) {
                 broadcastChannel.postMessage({
                     type: 'location',
-                    lat: pos.lat,
-                    lng: pos.lng
+                    ...pos
                 });
             }
         }
@@ -523,6 +584,7 @@
                 buddyPos.lat, buddyPos.lng
             );
 
+            // Display distance (switch to feet when closer than 0.1 mile)
             if (distMiles < 0.1) {
                 const feet = Math.round(distMiles * 5280);
                 document.getElementById('dist-val').innerHTML = `${feet} <span>ft</span>`;
@@ -530,8 +592,9 @@
                 document.getElementById('dist-val').innerHTML = `${distMiles.toFixed(2)} <span>mi</span>`;
             }
 
-            const speedMph = 12;
-            const etaMinutes = Math.ceil((distMiles / speedMph) * 60);
+            // Estimate Time of Arrival (Dynamic based on current MPH or default 15mph movement)
+            const speedToUse = currentSpeedMph > 3 ? currentSpeedMph : 15;
+            const etaMinutes = Math.ceil((distMiles / speedToUse) * 60);
 
             if (etaMinutes <= 1) {
                 document.getElementById('eta-val').innerHTML = `< 1 <span>min</span>`;
@@ -539,15 +602,16 @@
                 document.getElementById('eta-val').innerHTML = `${etaMinutes} <span>min</span>`;
             }
 
-            if (distMiles * 5280 < 25) {
+            // Arrival Notification trigger
+            if (distMiles * 5280 < 30) {
                 triggerArrivalChime();
-                document.getElementById('status-val').innerText = 'Arrived / Destination Reached!';
+                document.getElementById('status-val').innerText = 'Arrived / Contact Met!';
                 document.getElementById('status-val').style.color = '#10b981';
             }
         }
 
         function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-            const R = 3958.8;
+            const R = 3958.8; // Earth radius in miles
             const dLat = toRad(lat2 - lat1);
             const dLon = toRad(lon2 - lon1);
             const a = 
@@ -570,6 +634,7 @@
                 isDemoRunning = false;
                 demoBtn.innerHTML = `<i class="fa-solid fa-play"></i> Test Demo`;
                 demoBtn.className = "btn btn-amber";
+                document.getElementById('speed-val').innerHTML = `0 <span>mph</span>`;
                 return;
             }
 
@@ -581,7 +646,7 @@
             const startLng = userPos ? userPos.lng : DEFAULT_LNG;
 
             userPos = { lat: startLat, lng: startLng };
-            buddyPos = { lat: startLat + 0.012, lng: startLng + 0.012 };
+            buddyPos = { lat: startLat + 0.015, lng: startLng + 0.015 };
 
             updateUserMarker(userPos.lat, userPos.lng);
             updateBuddyMarker(buddyPos.lat, buddyPos.lng);
@@ -591,6 +656,10 @@
                 [buddyPos.lat, buddyPos.lng]
             );
             map.fitBounds(bounds, { padding: [50, 50] });
+
+            // Simulate vehicle moving at 28 MPH
+            currentSpeedMph = 28;
+            document.getElementById('speed-val').innerHTML = `28 <span>mph</span>`;
 
             demoInterval = setInterval(() => {
                 if (!isDemoRunning) return;
@@ -602,11 +671,12 @@
                 recalculateMetrics();
 
                 const dist = calculateHaversineDistance(userPos.lat, userPos.lng, buddyPos.lat, buddyPos.lng);
-                if (dist * 5280 < 20) {
+                if (dist * 5280 < 25) {
                     clearInterval(demoInterval);
                     isDemoRunning = false;
                     demoBtn.innerHTML = `<i class="fa-solid fa-play"></i> Test Demo`;
                     demoBtn.className = "btn btn-amber";
+                    document.getElementById('speed-val').innerHTML = `0 <span>mph</span>`;
                 }
             }, 1000);
         }
@@ -644,6 +714,7 @@
             } catch (e) {}
         }
 
+        // Sharing Functionality
         function openShareModal() {
             document.getElementById('share-link-text').innerText = window.location.href;
             document.getElementById('share-modal').style.display = 'flex';
@@ -651,6 +722,27 @@
 
         function closeShareModal() {
             document.getElementById('share-modal').style.display = 'none';
+        }
+
+        // Native Share Sheet (Triggers phone's built-in share menu)
+        function shareNative() {
+            const shareData = {
+                title: '4ETA - Track My Arrival',
+                text: 'Track my live location, distance, and arrival time in real-time on 4ETA:',
+                url: window.location.href
+            };
+
+            if (navigator.share) {
+                navigator.share(shareData).catch(() => {});
+            } else {
+                copyShareLink();
+            }
+        }
+
+        // Direct SMS Link
+        function shareSMS() {
+            const msg = encodeURIComponent(`Track my live location and arrival time on 4ETA: ${window.location.href}`);
+            window.location.href = `sms:?&body=${msg}`;
         }
 
         function copyShareLink() {
