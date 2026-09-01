@@ -3,13 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>4ETA.com - Real-Time Distance & Speed Tracker</title>
+    <title>4ETA.com - Live Cell-Network Arrival Tracker</title>
 
-    <!-- Leaflet CSS for OpenStreetMap (100% Free, No API Key Required) -->
+    <!-- Leaflet CSS for OpenStreetMap -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
     
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Firebase SDK (v9 Compatibility Mode) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 
     <style>
         :root {
@@ -365,7 +369,7 @@
                 <div class="stat-value" id="dist-val">-- <span>mi</span></div>
             </div>
 
-            <!-- Speed Box (NEW) -->
+            <!-- Speed Box -->
             <div class="stat-box">
                 <div class="stat-label"><i class="fa-solid fa-gauge-high"></i> Speed</div>
                 <div class="stat-value" id="speed-val">0 <span>mph</span></div>
@@ -406,17 +410,14 @@
             <div class="link-box" id="share-link-text">https://4eta.com/#...</div>
 
             <div class="share-grid">
-                <!-- Native Phone Share Sheet (Text Messages, WhatsApp, AirDrop, etc.) -->
                 <button class="btn btn-primary" style="width: 100%;" onclick="shareNative()">
                     <i class="fa-solid fa-paper-plane"></i> Share Link (SMS / Apps)
                 </button>
                 
-                <!-- Direct SMS Text Link -->
                 <button class="btn btn-amber" style="width: 100%;" onclick="shareSMS()">
                     <i class="fa-solid fa-comment-sms"></i> Send Text / SMS
                 </button>
 
-                <!-- Copy to Clipboard -->
                 <button class="btn btn-secondary" style="width: 100%;" onclick="copyShareLink()">
                     <i class="fa-solid fa-copy"></i> Copy Link Only
                 </button>
@@ -430,17 +431,37 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
     <script>
-        // Core State
+        // Integrated Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDCudEWPgTN-bLSThrsspZq1G42gC_NnQI",
+            authDomain: "eta-14072.firebaseapp.com",
+            databaseURL: "https://eta-14072-default-rtdb.firebaseio.com",
+            projectId: "eta-14072",
+            storageBucket: "eta-14072.firebasestorage.app",
+            messagingSenderId: "371118748763",
+            appId: "1:371118748763:web:2467092dbf915d44d3bb7e",
+            measurementId: "G-2ERQ1JT20P"
+        };
+
+        // Initialize Firebase
+        let db = null;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+        } catch (e) {
+            console.warn("Firebase initialization error:", e);
+        }
+
+        // Core App State
         let map, userMarker, buddyMarker, connectingLine;
         let userPos = null;
         let buddyPos = null;
         let currentSpeedMph = 0;
         let sessionId = '';
+        let userId = 'usr_' + Math.random().toString(36).substring(2, 8);
         let isDemoRunning = false;
         let demoInterval = null;
-        let broadcastChannel = null;
 
-        // Default map coordinates (Fallback)
         const DEFAULT_LAT = 37.2707;
         const DEFAULT_LNG = -76.7075;
 
@@ -448,7 +469,7 @@
             initSession();
             initMap();
             startGPSWatcher();
-            setupPeerCommunication();
+            setupFirebaseTracking();
         });
 
         function initSession() {
@@ -467,13 +488,11 @@
                 attributionControl: false
             }).setView([DEFAULT_LAT, DEFAULT_LNG], 14);
 
-            // OpenStreetMap Standard Tiles - Free, No API Key Required
             L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
 
-            // Connecting dashed path between locations
             connectingLine = L.polyline([], {
                 color: '#10b981',
                 weight: 4,
@@ -489,7 +508,6 @@
                         const { latitude, longitude, speed } = position.coords;
                         userPos = { lat: latitude, lng: longitude };
 
-                        // Calculate Speed in MPH (speed is in meters/sec from GPS API)
                         if (speed !== null && speed !== undefined && speed > 0) {
                             currentSpeedMph = Math.round(speed * 2.23694);
                         } else {
@@ -499,10 +517,10 @@
                         document.getElementById('speed-val').innerHTML = `${currentSpeedMph} <span>mph</span>`;
 
                         updateUserMarker(latitude, longitude);
-                        document.getElementById('status-val').innerText = 'Live GPS Active';
+                        document.getElementById('status-val').innerText = 'Live Cellular GPS Active';
                         document.getElementById('status-val').style.color = '#10b981';
 
-                        broadcastLocation({ ...userPos, speedMph: currentSpeedMph });
+                        pushLocationToFirebase({ ...userPos, speedMph: currentSpeedMph });
                         recalculateMetrics();
                     },
                     (error) => {
@@ -550,23 +568,41 @@
             }
         }
 
-        function setupPeerCommunication() {
-            broadcastChannel = new BroadcastChannel('4eta_' + sessionId);
-            
-            broadcastChannel.onmessage = (event) => {
-                if (event.data && event.data.type === 'location') {
-                    buddyPos = { lat: event.data.lat, lng: event.data.lng };
-                    updateBuddyMarker(buddyPos.lat, buddyPos.lng);
-                    recalculateMetrics();
+        // Firebase Cloud Relay across Cell Networks
+        function setupFirebaseTracking() {
+            if (!db) return;
+
+            const roomRef = db.ref('rooms/' + sessionId);
+
+            // Listen for other user updates in the room
+            roomRef.on('child_changed', (snapshot) => {
+                if (snapshot.key !== userId) {
+                    const data = snapshot.val();
+                    if (data && data.lat && data.lng) {
+                        buddyPos = { lat: data.lat, lng: data.lng };
+                        updateBuddyMarker(buddyPos.lat, buddyPos.lng);
+                        recalculateMetrics();
+                    }
                 }
-            };
+            });
+
+            roomRef.on('child_added', (snapshot) => {
+                if (snapshot.key !== userId) {
+                    const data = snapshot.val();
+                    if (data && data.lat && data.lng) {
+                        buddyPos = { lat: data.lat, lng: data.lng };
+                        updateBuddyMarker(buddyPos.lat, buddyPos.lng);
+                        recalculateMetrics();
+                    }
+                }
+            });
         }
 
-        function broadcastLocation(pos) {
-            if (broadcastChannel && pos) {
-                broadcastChannel.postMessage({
-                    type: 'location',
-                    ...pos
+        function pushLocationToFirebase(data) {
+            if (db && sessionId && userId) {
+                db.ref('rooms/' + sessionId + '/' + userId).set({
+                    ...data,
+                    timestamp: Date.now()
                 });
             }
         }
@@ -584,7 +620,6 @@
                 buddyPos.lat, buddyPos.lng
             );
 
-            // Display distance (switch to feet when closer than 0.1 mile)
             if (distMiles < 0.1) {
                 const feet = Math.round(distMiles * 5280);
                 document.getElementById('dist-val').innerHTML = `${feet} <span>ft</span>`;
@@ -592,7 +627,6 @@
                 document.getElementById('dist-val').innerHTML = `${distMiles.toFixed(2)} <span>mi</span>`;
             }
 
-            // Estimate Time of Arrival (Dynamic based on current MPH or default 15mph movement)
             const speedToUse = currentSpeedMph > 3 ? currentSpeedMph : 15;
             const etaMinutes = Math.ceil((distMiles / speedToUse) * 60);
 
@@ -602,7 +636,6 @@
                 document.getElementById('eta-val').innerHTML = `${etaMinutes} <span>min</span>`;
             }
 
-            // Arrival Notification trigger
             if (distMiles * 5280 < 30) {
                 triggerArrivalChime();
                 document.getElementById('status-val').innerText = 'Arrived / Contact Met!';
@@ -611,7 +644,7 @@
         }
 
         function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-            const R = 3958.8; // Earth radius in miles
+            const R = 3958.8;
             const dLat = toRad(lat2 - lat1);
             const dLon = toRad(lon2 - lon1);
             const a = 
@@ -657,9 +690,8 @@
             );
             map.fitBounds(bounds, { padding: [50, 50] });
 
-            // Simulate vehicle moving at 28 MPH
-            currentSpeedMph = 28;
-            document.getElementById('speed-val').innerHTML = `28 <span>mph</span>`;
+            currentSpeedMph = 35;
+            document.getElementById('speed-val').innerHTML = `35 <span>mph</span>`;
 
             demoInterval = setInterval(() => {
                 if (!isDemoRunning) return;
@@ -714,7 +746,6 @@
             } catch (e) {}
         }
 
-        // Sharing Functionality
         function openShareModal() {
             document.getElementById('share-link-text').innerText = window.location.href;
             document.getElementById('share-modal').style.display = 'flex';
@@ -724,11 +755,10 @@
             document.getElementById('share-modal').style.display = 'none';
         }
 
-        // Native Share Sheet (Triggers phone's built-in share menu)
         function shareNative() {
             const shareData = {
                 title: '4ETA - Track My Arrival',
-                text: 'Track my live location, distance, and arrival time in real-time on 4ETA:',
+                text: 'Track my live location, speed, and arrival time in real-time on 4ETA:',
                 url: window.location.href
             };
 
@@ -739,7 +769,6 @@
             }
         }
 
-        // Direct SMS Link
         function shareSMS() {
             const msg = encodeURIComponent(`Track my live location and arrival time on 4ETA: ${window.location.href}`);
             window.location.href = `sms:?&body=${msg}`;
