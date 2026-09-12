@@ -218,6 +218,18 @@
             color: #000;
         }
 
+        .btn-voice {
+            background: rgba(37, 99, 235, 0.2);
+            color: #93c5fd;
+            border: 1px solid rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-voice.active {
+            background: var(--accent-blue);
+            color: #fff;
+            border-color: var(--accent-blue);
+        }
+
         .btn:active {
             transform: scale(0.97);
             opacity: 0.9;
@@ -390,12 +402,15 @@
 
         <div class="action-row">
             <button class="btn btn-primary" onclick="openShareModal()">
-                <i class="fa-solid fa-share-nodes"></i> Connect Person
+                <i class="fa-solid fa-share-nodes"></i> Connect
+            </button>
+            <button class="btn btn-voice" onclick="toggleVoiceOutput()" id="voice-btn">
+                <i class="fa-solid fa-volume-xmark"></i> Voice Off
             </button>
             <button class="btn btn-amber" onclick="toggleDemoMode()" id="demo-btn">
-                <i class="fa-solid fa-play"></i> Test Demo
+                <i class="fa-solid fa-play"></i> Demo
             </button>
-            <button class="btn btn-secondary" style="flex:0; padding: 12px 16px;" onclick="centerMap()">
+            <button class="btn btn-secondary" style="flex:0; padding: 12px 14px;" onclick="centerMap()">
                 <i class="fa-solid fa-crosshairs"></i>
             </button>
         </div>
@@ -461,6 +476,11 @@
         let userId = 'usr_' + Math.random().toString(36).substring(2, 8);
         let isDemoRunning = false;
         let demoInterval = null;
+
+        // Voice Guidance State
+        let isVoiceActive = false;
+        let lastSpokenTime = 0;
+        const VOICE_INTERVAL_MS = 30000; // 30 seconds
 
         const DEFAULT_LAT = 37.2707;
         const DEFAULT_LNG = -76.7075;
@@ -574,7 +594,6 @@
 
             const roomRef = db.ref('rooms/' + sessionId);
 
-            // Listen for other user updates in the room
             roomRef.on('child_changed', (snapshot) => {
                 if (snapshot.key !== userId) {
                     const data = snapshot.val();
@@ -620,26 +639,44 @@
                 buddyPos.lat, buddyPos.lng
             );
 
+            let distDisplayStr = "";
             if (distMiles < 0.1) {
                 const feet = Math.round(distMiles * 5280);
                 document.getElementById('dist-val').innerHTML = `${feet} <span>ft</span>`;
+                distDisplayStr = `${feet} feet away`;
             } else {
                 document.getElementById('dist-val').innerHTML = `${distMiles.toFixed(2)} <span>mi</span>`;
+                distDisplayStr = `${distMiles.toFixed(1)} miles away`;
             }
 
             const speedToUse = currentSpeedMph > 3 ? currentSpeedMph : 15;
             const etaMinutes = Math.ceil((distMiles / speedToUse) * 60);
 
+            let etaDisplayStr = "";
             if (etaMinutes <= 1) {
                 document.getElementById('eta-val').innerHTML = `< 1 <span>min</span>`;
+                etaDisplayStr = "less than 1 minute";
             } else {
                 document.getElementById('eta-val').innerHTML = `${etaMinutes} <span>min</span>`;
+                etaDisplayStr = `${etaMinutes} minutes`;
             }
 
             if (distMiles * 5280 < 30) {
                 triggerArrivalChime();
                 document.getElementById('status-val').innerText = 'Arrived / Contact Met!';
                 document.getElementById('status-val').style.color = '#10b981';
+                
+                if (isVoiceActive) {
+                    speakText("The person has arrived and met your location.");
+                }
+            } else {
+                // Check if 30 seconds have passed for voice update
+                const now = Date.now();
+                if (isVoiceActive && (now - lastSpokenTime >= VOICE_INTERVAL_MS)) {
+                    lastSpokenTime = now;
+                    const speechMessage = `Status update: The person is ${distDisplayStr}, traveling at ${currentSpeedMph} miles per hour, with an estimated arrival time of ${etaDisplayStr}.`;
+                    speakText(speechMessage);
+                }
             }
         }
 
@@ -659,20 +696,53 @@
             return degrees * (Math.PI / 180);
         }
 
+        // Voice Guidance Control
+        function toggleVoiceOutput() {
+            isVoiceActive = !isVoiceActive;
+            const btn = document.getElementById('voice-btn');
+
+            if (isVoiceActive) {
+                btn.className = "btn btn-voice active";
+                btn.innerHTML = `<i class="fa-solid fa-volume-high"></i> Voice On`;
+                showToast("Voice notifications enabled (every 30s)");
+                lastSpokenTime = 0; // Trigger prompt immediately on next calculation
+                speakText("Voice guidance activated. You will receive route updates.");
+            } else {
+                btn.className = "btn btn-voice";
+                btn.innerHTML = `<i class="fa-solid fa-volume-xmark"></i> Voice Off`;
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                }
+                showToast("Voice notifications disabled");
+            }
+        }
+
+        function speakText(text) {
+            if (!('speechSynthesis' in window)) return;
+            
+            // Cancel any ongoing utterance to avoid stacking delays
+            window.speechSynthesis.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            window.speechSynthesis.speak(utterance);
+        }
+
         function toggleDemoMode() {
             const demoBtn = document.getElementById('demo-btn');
             
             if (isDemoRunning) {
                 clearInterval(demoInterval);
                 isDemoRunning = false;
-                demoBtn.innerHTML = `<i class="fa-solid fa-play"></i> Test Demo`;
+                demoBtn.innerHTML = `<i class="fa-solid fa-play"></i> Demo`;
                 demoBtn.className = "btn btn-amber";
                 document.getElementById('speed-val').innerHTML = `0 <span>mph</span>`;
                 return;
             }
 
             isDemoRunning = true;
-            demoBtn.innerHTML = `<i class="fa-solid fa-stop"></i> Stop Demo`;
+            demoBtn.innerHTML = `<i class="fa-solid fa-stop"></i> Stop`;
             demoBtn.className = "btn btn-secondary";
 
             const startLat = userPos ? userPos.lat : DEFAULT_LAT;
@@ -706,7 +776,7 @@
                 if (dist * 5280 < 25) {
                     clearInterval(demoInterval);
                     isDemoRunning = false;
-                    demoBtn.innerHTML = `<i class="fa-solid fa-play"></i> Test Demo`;
+                    demoBtn.innerHTML = `<i class="fa-solid fa-play"></i> Demo`;
                     demoBtn.className = "btn btn-amber";
                     document.getElementById('speed-val').innerHTML = `0 <span>mph</span>`;
                 }
